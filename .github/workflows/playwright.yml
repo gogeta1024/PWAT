@@ -235,15 +235,15 @@ jobs:
           {
             echo "## Playwright test summary"
             echo
-            echo "**Status:** \\`${JOB_STATUS}\`  "
+            echo "**Status:** ${JOB_STATUS}  "
             echo "**Total tests:** ${total}"
             echo
             echo "| Result | Count | Percent | Progress |"
             echo "|---|---:|---:|:---|"
-            echo "| Passed | ${passed} | ${passed_percent}% | \\`$(progress_bar "$passed_percent")\\` |"
-            echo "| Failed | ${failed} | ${failed_percent}% | \\`$(progress_bar "$failed_percent")\\` |"
-            echo "| Broken | ${broken} | ${broken_percent}% | \\`$(progress_bar "$broken_percent")\\` |"
-            echo "| Skipped | ${skipped} | ${skipped_percent}% | \\`$(progress_bar "$skipped_percent")\\` |"
+            echo "| Passed | ${passed} | ${passed_percent}% | $(progress_bar "$passed_percent") |"
+            echo "| Failed | ${failed} | ${failed_percent}% | $(progress_bar "$failed_percent") |"
+            echo "| Broken | ${broken} | ${broken_percent}% | $(progress_bar "$broken_percent") |"
+            echo "| Skipped | ${skipped} | ${skipped_percent}% | $(progress_bar "$skipped_percent") |"
             echo
             echo "### Reports"
             if [ -n "$PAGES_REPORT_URL" ]; then
