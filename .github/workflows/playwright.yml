@@ -58,10 +58,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: lts/*
 
@@ -132,7 +132,7 @@ jobs:
 
       - name: Upload Allure results
         if: ${{ !cancelled() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: allure-results-${{ github.run_id }}
           path: allure-results/
@@ -152,7 +152,7 @@ jobs:
 
       - name: Upload Allure report
         if: ${{ !cancelled() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: allure-report-${{ github.run_id }}
           path: allure-report/
@@ -161,20 +161,20 @@ jobs:
 
       - name: Configure GitHub Pages
         if: ${{ !cancelled() && github.event_name != 'pull_request' && inputs.github_pages == 'enable' }}
-        uses: actions/configure-pages@v5
+        uses: actions/configure-pages@v6
         with:
           enablement: true
 
       - name: Upload Allure report to GitHub Pages
         if: ${{ !cancelled() && github.event_name != 'pull_request' && inputs.github_pages == 'enable' }}
-        uses: actions/upload-pages-artifact@v3
+        uses: actions/upload-pages-artifact@v5
         with:
           path: allure-report/
 
       - name: Deploy Allure report to GitHub Pages
         id: deployment
         if: ${{ !cancelled() && github.event_name != 'pull_request' && inputs.github_pages == 'enable' }}
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5
 
       - name: Notify Microsoft Teams (always)
         if: always()
