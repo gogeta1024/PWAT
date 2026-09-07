@@ -211,12 +211,39 @@ jobs:
             total=0
           fi
 
+          percent() {
+            if [ "$total" -eq 0 ]; then
+              echo 0
+            else
+              echo $(( $1 * 100 / total ))
+            fi
+          }
+
+          progress_bar() {
+            local percent_value=$1
+            local filled=$(( percent_value / 5 ))
+            local empty=$(( 20 - filled ))
+            printf '%*s' "$filled" '' | tr ' ' '#'
+            printf '%*s' "$empty" '' | tr ' ' '-'
+          }
+
+          passed_percent=$(percent "$passed")
+          failed_percent=$(percent "$failed")
+          broken_percent=$(percent "$broken")
+          skipped_percent=$(percent "$skipped")
+
           {
             echo "## Playwright test summary"
             echo
-            echo "| Status | Total | Passed | Failed | Broken | Skipped |"
-            echo "|---|---:|---:|---:|---:|---:|"
-            echo "| **${JOB_STATUS}** | ${total} | ${passed} | ${failed} | ${broken} | ${skipped} |"
+            echo "**Status:** \\`${JOB_STATUS}\`  "
+            echo "**Total tests:** ${total}"
+            echo
+            echo "| Result | Count | Percent | Progress |"
+            echo "|---|---:|---:|:---|"
+            echo "| Passed | ${passed} | ${passed_percent}% | \\`$(progress_bar "$passed_percent")\\` |"
+            echo "| Failed | ${failed} | ${failed_percent}% | \\`$(progress_bar "$failed_percent")\\` |"
+            echo "| Broken | ${broken} | ${broken_percent}% | \\`$(progress_bar "$broken_percent")\\` |"
+            echo "| Skipped | ${skipped} | ${skipped_percent}% | \\`$(progress_bar "$skipped_percent")\\` |"
             echo
             echo "### Reports"
             if [ -n "$PAGES_REPORT_URL" ]; then
