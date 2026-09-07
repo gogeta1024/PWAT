@@ -17,15 +17,15 @@ on:
           - dev
           - qa
       spec:
-        description: "Spec file/pattern (optional)"
+        description: "Spec file/pattern (optional, e.g. tests/e2e/test04.spec.ts)"
         required: false
         default: ""
       grep:
-        description: "Grep filter (optional)"
+        description: "Grep filter by test title/tag (optional, e.g. test03)"
         required: false
         default: ""
       workers:
-        description: "Workers override (optional)"
+        description: "Number of Playwright workers (optional, e.g. 2)"
         required: false
         default: ""
       github_pages:
@@ -178,21 +178,31 @@ jobs:
         uses: actions/deploy-pages@v5
 
       - name: Write test summary
-        if: always()
+        if: ${{ always() }}
         shell: bash
         env:
           JOB_STATUS: ${{ job.status }}
           ALLURE_REPORT_URL: ${{ steps.allure_report.outputs.artifact-url }}
           PAGES_REPORT_URL: ${{ steps.deployment.outputs.page_url }}
         run: |
-          summary_file="allure-report/widgets/summary.json"
+          result_files=(allure-results/*-result.json)
 
-          if [ -f "$summary_file" ]; then
-            passed=$(jq -r '.statistic.passed // 0' "$summary_file")
-            failed=$(jq -r '.statistic.failed // 0' "$summary_file")
-            broken=$(jq -r '.statistic.broken // 0' "$summary_file")
-            skipped=$(jq -r '.statistic.skipped // 0' "$summary_file")
-            total=$(jq -r '.statistic.total // 0' "$summary_file")
+          if [ -e "${result_files[0]}" ]; then
+            stats=$(jq -s '
+              map(select(.status != null)) |
+              {
+                total: length,
+                passed: map(select(.status == "passed")) | length,
+                failed: map(select(.status == "failed")) | length,
+                broken: map(select(.status == "broken")) | length,
+                skipped: map(select(.status == "skipped")) | length
+              }
+            ' "${result_files[@]}")
+            passed=$(jq -r '.passed' <<< "$stats")
+            failed=$(jq -r '.failed' <<< "$stats")
+            broken=$(jq -r '.broken' <<< "$stats")
+            skipped=$(jq -r '.skipped' <<< "$stats")
+            total=$(jq -r '.total' <<< "$stats")
           else
             passed=0
             failed=0
