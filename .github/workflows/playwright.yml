@@ -151,6 +151,7 @@ jobs:
           fi
 
       - name: Upload Allure report
+        id: allure_report
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v7
         with:
@@ -175,6 +176,49 @@ jobs:
         id: deployment
         if: ${{ !cancelled() && github.event_name != 'pull_request' && inputs.github_pages == 'enable' }}
         uses: actions/deploy-pages@v5
+
+      - name: Write test summary
+        if: always()
+        shell: bash
+        env:
+          JOB_STATUS: ${{ job.status }}
+          ALLURE_REPORT_URL: ${{ steps.allure_report.outputs.artifact-url }}
+          PAGES_REPORT_URL: ${{ steps.deployment.outputs.page_url }}
+        run: |
+          summary_file="allure-report/widgets/summary.json"
+
+          if [ -f "$summary_file" ]; then
+            passed=$(jq -r '.statistic.passed // 0' "$summary_file")
+            failed=$(jq -r '.statistic.failed // 0' "$summary_file")
+            broken=$(jq -r '.statistic.broken // 0' "$summary_file")
+            skipped=$(jq -r '.statistic.skipped // 0' "$summary_file")
+            total=$(jq -r '.statistic.total // 0' "$summary_file")
+          else
+            passed=0
+            failed=0
+            broken=0
+            skipped=0
+            total=0
+          fi
+
+          {
+            echo "## Playwright test summary"
+            echo
+            echo "| Status | Total | Passed | Failed | Broken | Skipped |"
+            echo "|---|---:|---:|---:|---:|---:|"
+            echo "| **${JOB_STATUS}** | ${total} | ${passed} | ${failed} | ${broken} | ${skipped} |"
+            echo
+            echo "### Reports"
+            if [ -n "$PAGES_REPORT_URL" ]; then
+              echo "- [Open Allure report on GitHub Pages]($PAGES_REPORT_URL)"
+            fi
+            if [ -n "$ALLURE_REPORT_URL" ]; then
+              echo "- [Download Allure report artifact]($ALLURE_REPORT_URL)"
+            fi
+            if [ -z "$PAGES_REPORT_URL" ] && [ -z "$ALLURE_REPORT_URL" ]; then
+              echo "- No report link is available."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Notify Microsoft Teams (always)
         if: always()
