@@ -1,0 +1,8 @@
+{
+    "category": "baby",
+    "patternKey": "toddler",
+    "pattern": {
+        "newborn": "新生児服・乳児服(0歳～2歳)",
+        "toddler": "乳幼児服(6ヶ月～5歳)"
+    }
+}

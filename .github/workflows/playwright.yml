@@ -1,0 +1,252 @@
+name: Playwright Tests
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+on:
+  workflow_dispatch:
+    inputs:
+      env_name:
+        description: "Choose env"
+        type: choice
+        required: true
+        default: dev
+        options:
+          - dev
+          - qa
+      spec:
+        description: "Spec file/pattern (optional)"
+        required: false
+        default: ""
+      grep:
+        description: "Grep filter (optional)"
+        required: false
+        default: ""
+      workers:
+        description: "Workers override (optional)"
+        required: false
+        default: ""
+      github_pages:
+        description: "Deploy Allure report to GitHub Pages"
+        type: choice
+        required: true
+        default: disable
+        options:
+          - disable
+          - enable
+
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    env:
+      CI: true
+      DOTENV_FILE: env/.env.dev
+      SPEC: ""
+      GREP: ""
+      WORKERS: ""
+      PW_HEADLESS: "true"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+
+      - name: Resolve inputs (workflow_dispatch only)
+        if: github.event_name == 'workflow_dispatch'
+        shell: bash
+        run: |
+          echo "DOTENV_FILE=env/.env.${{ inputs.env_name }}" >> "$GITHUB_ENV"
+          echo "SPEC=${{ inputs.spec }}" >> "$GITHUB_ENV"
+          echo "GREP=${{ inputs.grep }}" >> "$GITHUB_ENV"
+          echo "WORKERS=${{ inputs.workers }}" >> "$GITHUB_ENV"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps
+
+      - name: Load env file (export)
+        shell: bash
+        run: |
+          echo "Using DOTENV_FILE=$DOTENV_FILE"
+          if [ ! -f "$DOTENV_FILE" ]; then
+            echo "::error::Missing $DOTENV_FILE"
+            ls -la env || true
+            exit 1
+          fi
+
+          set -a
+          source "$DOTENV_FILE"
+          set +a
+
+          echo "Loaded ENV_NAME=$ENV_NAME"
+          echo "Loaded BASE_URL=$BASE_URL"
+
+          # Persist for later steps
+          echo "ENV_NAME=$ENV_NAME" >> "$GITHUB_ENV"
+          echo "BASE_URL=$BASE_URL" >> "$GITHUB_ENV"
+
+      - name: Run Playwright tests
+        shell: bash
+        run: |
+          CMD=(npx playwright test)
+
+          if [ -n "$WORKERS" ]; then
+            CMD+=(--workers "$WORKERS")
+          fi
+
+          if [ -n "$SPEC" ]; then
+            CMD+=("$SPEC")
+          fi
+
+          if [ "$ENV_NAME" = "qa" ]; then
+            if [ -n "$GREP" ]; then
+              CMD+=(--grep "(?=.*@qa)(?=.*$GREP)")
+            else
+              CMD+=(--grep "@qa")
+            fi
+          else
+            CMD+=(--grep-invert "@qa")
+            if [ -n "$GREP" ]; then
+              CMD+=(--grep "$GREP")
+            fi
+          fi
+
+          echo "Running: ${CMD[*]}"
+          "${CMD[@]}"
+
+      - name: Upload Allure results
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: allure-results-${{ github.run_id }}
+          path: allure-results/
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Generate Allure report
+        if: ${{ !cancelled() }}
+        shell: bash
+        run: |
+          if [ -n "$(find allure-results -type f -print -quit 2>/dev/null)" ]; then
+            npx allure generate allure-results -o allure-report --clean --single-file
+          else
+            echo "::error::No Allure result files found."
+            exit 1
+          fi
+
+      - name: Upload Allure report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: allure-report-${{ github.run_id }}
+          path: allure-report/
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Configure GitHub Pages
+        if: ${{ !cancelled() && github.event_name != 'pull_request' && inputs.github_pages == 'enable' }}
+        uses: actions/configure-pages@v5
+        with:
+          enablement: true
+
+      - name: Upload Allure report to GitHub Pages
+        if: ${{ !cancelled() && github.event_name != 'pull_request' && inputs.github_pages == 'enable' }}
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: allure-report/
+
+      - name: Deploy Allure report to GitHub Pages
+        id: deployment
+        if: ${{ !cancelled() && github.event_name != 'pull_request' && inputs.github_pages == 'enable' }}
+        uses: actions/deploy-pages@v4
+
+      - name: Notify Microsoft Teams (always)
+        if: always()
+        shell: bash
+        env:
+          TEAMS_WEBHOOK_URL: ${{ secrets.TEAMS_WEBHOOK_URL }}
+          STATUS: ${{ job.status }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          BRANCH: ${{ github.ref_name }}
+          REPORT_URL: ${{ steps.deployment.outputs.page_url }}
+        run: |
+          if [ -z "$TEAMS_WEBHOOK_URL" ]; then
+            echo "::warning::TEAMS_WEBHOOK_URL not set, skip notify."
+            exit 0
+          fi
+
+          SPEC_VAL="${SPEC:-<all>}"
+          GREP_VAL="${GREP:-<none>}"
+          export SPEC_VAL GREP_VAL
+
+          node -e "
+            const url = process.env.TEAMS_WEBHOOK_URL;
+            const status = process.env.STATUS;
+            const runUrl = process.env.RUN_URL;
+            const branch = process.env.BRANCH;
+
+            const envName = process.env.ENV_NAME || '<unknown>';
+            const baseUrl = process.env.BASE_URL || '<unknown>';
+            const spec = process.env.SPEC_VAL || '<all>';
+            const grep = process.env.GREP_VAL || '<none>';
+            const reportUrl = process.env.REPORT_URL || '<not deployed>';
+
+            const text = [
+              'Playwright run: ' + status,
+              'Branch: ' + branch,
+              'ENV_NAME: ' + envName,
+              'BASE_URL: ' + baseUrl,
+              'Spec: ' + spec,
+              'Grep: ' + grep,
+              'Allure report: ' + reportUrl,
+              'Run: ' + runUrl
+            ].join('\\n');
+
+            const payload = {
+              '@type': 'MessageCard',
+              '@context': 'http://schema.org/extensions',
+              summary: 'Playwright test result',
+              themeColor: status === 'success' ? '2EB886' : 'D83B01',
+              title: 'Playwright Tests - ' + status,
+              text,
+              potentialAction: [{
+                '@type': 'OpenUri',
+                name: 'Open GitHub Run',
+                targets: [{ os: 'default', uri: runUrl }]
+              }]
+            };
+
+            fetch(url, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(payload)
+            }).then(r => process.exit(r.ok ? 0 : 1))
+              .catch(() => process.exit(1));
+          "
+          RC=$?
+
+          if [ $RC -ne 0 ]; then
+            echo "::warning::Teams notification failed (exit=$RC)"
+            if [ "$BRANCH" = "main" ]; then
+              echo "::error::Teams notification failed on main -> fail job"
+              exit 1
+            fi
+          fi
+
+          exit 0

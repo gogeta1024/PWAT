@@ -1,0 +1,12 @@
+{
+    "username":"admin",
+    "password":"admin",
+    "dropdown": {
+        "value": "1",
+        "label": "Option 2"
+    },
+    "checkbox": {
+        "checkbox1": "0",
+        "checkbox2": 1
+    }
+}
